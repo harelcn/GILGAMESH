@@ -1,0 +1,10 @@
+{
+  "framework": null,
+  "installCommand": "echo skip",
+  "buildCommand": "node build.mjs",
+  "outputDirectory": "public",
+  "cleanUrls": false,
+  "headers": [
+    { "source": "/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+  ]
+}
