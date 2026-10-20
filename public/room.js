@@ -170,7 +170,7 @@ function initPlayer() {
   $('tFwd').onclick = () => seek(cur + 1);
   $('tFwdSec').onclick = () => seek(cur + Math.round(FPS));
   $('tMute').onclick = $('unmute').onclick = () => { V.muted = !V.muted; };
-  $('tFull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : wrap.requestFullscreen?.());
+  $('tFull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : wrap.requestFullscreen ? wrap.requestFullscreen().catch(() => V.webkitEnterFullscreen?.()) : V.webkitEnterFullscreen?.());
   $('speed').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; V.playbackRate = +b.dataset.s; $('speed').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); };
   V.addEventListener('click', togglePlay);
   V.addEventListener('pointermove', showCoord); V.addEventListener('pointerleave', () => { $('coord').hidden = true; });

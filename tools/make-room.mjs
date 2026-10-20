@@ -28,6 +28,10 @@ js = js.replace(/function closeAfterSend\(\) \{[^\n]+\n/, 'function closeAfterSe
 js = js.replace(/\s*if \(dirty && hasLanes\) navigator\.sendBeacon[^\n]+\n/, '\n').replace(/\s*if \(editDirty\) navigator\.sendBeacon[^\n]+\n/, '\n');
 js = rep(js, "  box.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {", "  if (!C.isOwner()) box.querySelector('.src-acts')?.remove();\n  box.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {", 'swap buttons');
 
+// ---- full screen on the iPhone: Safari has no element fullscreen, only the video's own ----
+js = rep(js, "$('tFull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : wrap.requestFullscreen?.());",
+  "$('tFull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : wrap.requestFullscreen ? wrap.requestFullscreen().catch(() => V.webkitEnterFullscreen?.()) : V.webkitEnterFullscreen?.());", 'fullscreen');
+
 // ---- partner's take-outs look like proposals on the timeline ----
 js = rep(js, 'return `<button class="rmb${sel?.kind === \'remove\' && sel.id === r.id ? \' sel\' : \'\'}"', 'return `<button class="rmb${sel?.kind === \'remove\' && sel.id === r.id ? \' sel\' : \'\'}${r.by && r.by !== C.me.email ? \' prop\' : \'\'}"', 'proposal style');
 
@@ -119,7 +123,34 @@ html = rep(html, '</style>', `
 .pnote{font-size:12.5px;color:var(--muted)}
 .padd{display:flex;gap:8px}
 .padd .field{flex:1;height:38px}
-@media (max-width:760px){.top-actions{flex-wrap:wrap;gap:6px}.whoami{display:none}}
+/* phone (Harel 20.10: "ממשק מיוחד לטלפון"): one column, a header that wraps instead of pushing the page sideways,
+   full-width player, compact actions, desktop-only precision tools hidden */
+@media (max-width:760px){
+  html,body{overflow-x:hidden;max-width:100vw}
+  .top{position:static;flex-wrap:wrap;gap:8px;padding:10px 12px;align-items:flex-start}
+  .brand{width:100%}
+  .brand h1{font-size:18px}
+  .top-actions{width:100%;flex:1 1 100%;flex-wrap:wrap;gap:6px;justify-content:flex-start}
+  .top-actions .btn{height:36px;padding:0 12px;font-size:13.5px}
+  .top-actions select{height:36px;max-width:42vw}
+  #sendTop{order:-1;flex:1 1 100%;height:44px;font-size:15px}
+  .presence{order:9;width:100%}
+  .whoami,.save-state{display:none}
+  .layout{padding:8px 8px 18px;gap:10px}
+  .player-card{padding:6px}
+  .video-wrap{width:100%!important;min-width:0!important;margin:0}
+  .actions{grid-template-columns:1fr 1fr!important;gap:6px}
+  .act{padding:8px 10px}
+  .act small{display:none}
+  .tools-row{flex-wrap:wrap}
+  .tools-row:nth-of-type(2){display:none}
+  .tbx{height:38px}
+  .rail > .card:first-child{display:none}
+  .tl-card{overflow-x:auto}
+}
+@media (max-width:900px) and (orientation:landscape) and (max-height:500px){
+  .top{display:none}
+}
 </style>`, 'css');
 
 fs.writeFileSync(path.join(OUT, 'room.js'), js);
