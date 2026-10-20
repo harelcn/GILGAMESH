@@ -153,10 +153,11 @@ create policy "members update lanes" on public.lane_states for update using (pub
 
 drop policy if exists "members read edits" on public.edit_states;
 create policy "members read edits" on public.edit_states for select using (public.is_member());
-drop policy if exists "owner writes edits" on public.edit_states;
-create policy "owner writes edits" on public.edit_states for insert with check (public.is_owner());
-drop policy if exists "owner updates edits" on public.edit_states;
-create policy "owner updates edits" on public.edit_states for update using (public.is_owner());
+-- the partner's cuts / take-outs are proposals; the room keeps each item's author and only the owner sends to Claude
+drop policy if exists "members write edits" on public.edit_states;
+create policy "members write edits" on public.edit_states for insert with check (public.is_member());
+drop policy if exists "members update edits" on public.edit_states;
+create policy "members update edits" on public.edit_states for update using (public.is_member());
 
 drop policy if exists "members read submissions" on public.submissions;
 create policy "members read submissions" on public.submissions for select using (public.is_member());

@@ -22,14 +22,14 @@ if (js.includes("'/studio/review/'")) throw new Error('local api left in room.js
 js = rep(js, '  V.src = FILE(M.file); V.muted = true;', "  V.crossOrigin = 'anonymous'; V.src = FILE(M.file); V.muted = true;", 'player src');
 
 // ---- roles: only the owner edits the cut and sends ----
-js = rep(js, 'function editChange(fn) {', "function editChange(fn) { if (!C.isOwner()) return toast('רק הראל עורך את החיתוך. אפשר להעיר ולצייר.');", 'editChange');
-js = rep(js, 'function editUndo() {', "function editUndo() { if (!C.isOwner()) return;", 'undo');
-js = js.replace('function editRedo() {', 'function editRedo() { if (!C.isOwner()) return;');
 js = rep(js, 'async function send() {', "async function send() {\n  if (!C.isOwner()) return toast('רק הראל שולח לקלוד. ההערות שלך כבר אצלו.');", 'send');
 js = rep(js, "location.href = '/studio/review' + (vs.value ? '?version=' + encodeURIComponent(vs.value) : '');", "location.href = './room.html' + (vs.value ? '?version=' + encodeURIComponent(vs.value) : '');", 'version switch');
 js = js.replace(/function closeAfterSend\(\) \{[^\n]+\n/, 'function closeAfterSend() {}\n');
 js = js.replace(/\s*if \(dirty && hasLanes\) navigator\.sendBeacon[^\n]+\n/, '\n').replace(/\s*if \(editDirty\) navigator\.sendBeacon[^\n]+\n/, '\n');
 js = rep(js, "  box.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {", "  if (!C.isOwner()) box.querySelector('.src-acts')?.remove();\n  box.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {", 'swap buttons');
+
+// ---- partner's take-outs look like proposals on the timeline ----
+js = rep(js, 'return `<button class="rmb${sel?.kind === \'remove\' && sel.id === r.id ? \' sel\' : \'\'}"', 'return `<button class="rmb${sel?.kind === \'remove\' && sel.id === r.id ? \' sel\' : \'\'}${r.by && r.by !== C.me.email ? \' prop\' : \'\'}"', 'proposal style');
 
 // ---- who wrote it ----
 js = rep(js, "<div class=\"nline\">${badge}${wasSent(e.at) ? '<span class=\"sent\">נשלח</span>' : ''}",
@@ -43,7 +43,7 @@ js = rep(js, '  paintIcons();\n  try { await load(); }', `  paintIcons();
 js = rep(js, '  initLayers();\n  $(\'boot\').remove();', '  initLayers();\n  cloudUI();\n  $(\'boot\').remove();', 'cloud ui');
 js += `
 // ---------- cloud room (Harel 20.10.2026): roles, who is here, live notes ----------
-const byLine = (e) => { const who = e.n?.author || e.r?.by || e.d?.by; return who && who !== C.me.email ? '<span class="by">' + esc(who.split('@')[0]) + '</span>' : ''; };
+const byLine = (e) => { const who = e.n?.author || e.r?.by || e.d?.by || e.x?.by; return who && who !== C.me.email ? '<span class="by">' + esc(who.split('@')[0]) + '</span>' : ''; };
 let following = null, people = [];
 function cloudUI() {
   const owner = C.isOwner();
@@ -51,11 +51,11 @@ function cloudUI() {
   $('whoami').textContent = C.me.name + (owner ? '' : ' · צופה ומעיר');
   $('logout').onclick = C.signOut;
   $('peopleBtn').hidden = !owner; $('peopleBtn').onclick = openPeople;
-  if (!owner) { for (const id of ['sendTop', 'sendBottom']) $(id).hidden = true; $('tools')?.querySelector('.tools-row')?.remove(); $('delivery').textContent = 'ההערות שלך נשמרות ונראות להראל מיד. הוא שולח אותן לקלוד.'; }
+  if (!owner) { for (const id of ['sendTop', 'sendBottom']) $(id).hidden = true; $('delivery').textContent = 'ההערות, הקאטים וההוצאות שלך הם הצעות: הם נשמרים ונראים להראל מיד, והוא מחליט ושולח לקלוד.'; }
   const report = C.live({
     onNote: (n) => { upsertNote(n); renderNotes(); paintOverlay(); updateCounts(); },
     onLanes: (s) => { if (dirty) return; L = { ...s }; if (document.activeElement !== $('general')) $('general').value = L.general || ''; afterChange(); paintMarks?.(); },
-    onEdit: (s) => { E = normEdit(s); afterEdit(); },
+    onEdit: (s) => { if (editDirty) return; E = normEdit(s); afterEdit(); },
     onPresence: (list) => { people = list; renderPeople(); follow(); },
   });
   setInterval(() => report(cur, !V.paused), 300);
@@ -109,7 +109,7 @@ html = rep(html, '</style>', `
 .pchip.on{border-color:var(--ok);color:var(--text)}
 .whoami{font-size:12.5px;color:var(--muted)}
 .by{font-size:10.5px;font-weight:700;color:var(--range);border:1px solid rgba(95,214,168,.35);border-radius:5px;padding:0 5px}
-body.viewer #tbCut,body.viewer #tbQ,body.viewer #tbW,body.viewer #tbDel,body.viewer #tbUndo,body.viewer #tbRedo{display:none}
+.rmb.prop{background:repeating-linear-gradient(135deg,rgba(95,214,168,.35) 0 6px,rgba(95,214,168,.12) 6px 12px)!important;border-color:var(--range)!important}
 .people-box{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px}
 .people-card{width:min(520px,100%);background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px}
 .people-card h2{margin:0;font-size:17px}

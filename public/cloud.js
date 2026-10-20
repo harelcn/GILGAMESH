@@ -163,16 +163,29 @@ export async function cloudReq(route, body, q = '') {
     return { state: { revision, ...state } };
   }
   if (route === 'edit') {
-    if (!isOwner()) throw err('רק הראל עורך את החיתוך.', 403);
+    // Harel 20.10: the partner may cut (K) and take out (Q/W/Delete) too, as proposals. Every item carries who made it;
+    // the partner can change only his own, the owner can change everything, and only the owner sends them to Claude.
     const { data: cur } = await sb.from('edit_states').select('*').eq('version_id', version.id).maybeSingle();
-    if ((cur?.revision || 0) !== body.revision) throw err('העריכה עודכנה בחלון אחר.', 409, { state: { revision: cur.revision, ...cur.state } });
-    const t = nowIso(), stamp = (list, old) => (list || []).map((x) => ({ ...x, at: (old || []).find((o) => o.id === x.id && JSON.stringify({ ...o, at: 0 }) === JSON.stringify({ ...x, at: 0 }))?.at || t }));
-    const o = cur?.state || {};
-    const state = { cuts: stamp(body.cuts, o.cuts), removes: stamp(body.removes, o.removes), frames: stamp(body.frames, o.frames), guides: stamp(body.guides, o.guides), swaps: stamp(body.swaps, o.swaps) };
+    const o = cur?.state || {}, t = nowIso(), mine = (x) => (x.by || o.owner || '') === me.email || (!x.by && isOwner());
+    const same = (a, b) => JSON.stringify({ ...a, at: 0, by: 0 }) === JSON.stringify({ ...b, at: 0, by: 0 });
+    const merge = (incoming, old) => {
+      old = old || [];
+      const out = (incoming || []).map((x) => { const p = old.find((q) => q.id === x.id); return { ...x, by: p?.by || x.by || me.email, at: p && same(p, x) ? p.at : t }; })
+        .filter((x) => { const p = old.find((q) => q.id === x.id); return isOwner() || !p || (p.by || '') === me.email; });
+      for (const p of old) {
+        if (out.some((x) => x.id === p.id)) continue;
+        const othersNew = (p.by || '') !== me.email && (p.at || '') > loadedAt;      // someone else added it meanwhile: keep it
+        if (othersNew || (!isOwner() && (p.by || '') !== me.email)) out.push(p);      // the partner never removes another person's item
+      }
+      return out;
+    };
+    const state = { cuts: merge(body.cuts, o.cuts), removes: merge(body.removes, o.removes), frames: merge(body.frames, o.frames), guides: merge(body.guides, o.guides),
+      swaps: isOwner() ? merge(body.swaps, o.swaps) : (o.swaps || []), by: me.email };
     const revision = (cur?.revision || 0) + 1;
     const res = cur ? await sb.from('edit_states').update({ state, revision, updated_at: t }).eq('version_id', version.id)
                     : await sb.from('edit_states').insert({ version_id: version.id, state, revision });
-    if (res.error) throw res.error;
+    if (res.error) throw err(/row-level security/i.test(res.error.message) ? 'אין הרשאת עריכה (צריך להריץ את עדכון ההרשאות ב-Supabase).' : res.error.message, 403);
+    loadedAt = t;
     return { state: { revision, ...state } };
   }
   if (route === 'submit') {
@@ -215,7 +228,8 @@ export function live({ onNote, onLanes, onEdit, onPresence }) {
       onLanes({ revision: p.new.revision, items: s.items || {}, ranges: s.ranges || [], general: s.general || '', generalUpdatedAt: s.generalUpdatedAt || null });
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'edit_states', filter: 'version_id=eq.' + vid }, (p) => {
-      if (isOwner()) return;
+      if ((p.new.state || {}).by === me.email) return;   // my own save
+      loadedAt = nowIso();
       onEdit({ revision: p.new.revision, ...(p.new.state || {}) });
     })
     .subscribe();

@@ -32,8 +32,8 @@ async function show(sub) {
   const cnt = ['cuts', 'removes', 'frames', 'guides', 'swaps'].map((k) => (E[k] || []).length);
   if (cnt.some(Boolean)) {
     out.push('', `עריכה בחדר: ${cnt[0]} קאטים · ${cnt[1]} הוצאות · ${cnt[2]} מסגורים · ${cnt[3]} קווי עזר · ${cnt[4]} שוטים מההנפשות`);
-    for (const c of E.cuts || []) out.push(`  קאט: פריים ${c.frame + 1} (${tc(c.frame, fps)})`);
-    for (const r of E.removes || []) out.push(`  הוצאה (${r.how}): פריימים ${r.fromFrame + 1}-${r.toFrame} (${tc(r.fromFrame, fps)}-${tc(r.toFrame - 1, fps)})${r.note ? ' · ' + r.note : ''}`);
+    for (const c of E.cuts || []) out.push(`  קאט: פריים ${c.frame + 1} (${tc(c.frame, fps)})${c.by ? ' · ' + c.by : ''}`);
+    for (const r of E.removes || []) out.push(`  הוצאה (${r.how}): פריימים ${r.fromFrame + 1}-${r.toFrame} (${tc(r.fromFrame, fps)}-${tc(r.toFrame - 1, fps)})${r.note ? ' · ' + r.note : ''}${r.by ? ' · ' + r.by : ''}`);
     for (const w of E.swaps || []) { const s = (p.segments || []).find((x) => x.id === w.segment); out.push(`  שוט מההנפשה · ${{ replace: 'החלף את', before: 'הוסף לפני', after: 'הוסף אחרי' }[w.action]} שוט ${s?.index ?? '?'} (${s?.shot ?? ''}) ← ${w.file}${w.shot ? ' · שוט ' + w.shot : ''} · ${w.sourceIn.toFixed(3)}-${w.sourceOut.toFixed(3)}s`); }
   }
   console.log(out.join('\n'));

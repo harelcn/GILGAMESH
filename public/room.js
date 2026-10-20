@@ -342,10 +342,10 @@ async function saveEdit() {
 // ביטול וביצוע שוב לכל פעולת עריכה
 const snapE = () => JSON.stringify({ cuts: E.cuts, removes: E.removes, frames: E.frames, guides: E.guides, swaps: E.swaps });
 function applySnap(sn) { const o = JSON.parse(sn); E.cuts = o.cuts; E.removes = o.removes; E.frames = o.frames; E.guides = o.guides; E.swaps = o.swaps || []; }
-function editChange(fn) { if (!C.isOwner()) return toast('רק הראל עורך את החיתוך. אפשר להעיר ולצייר.'); EH.undo.push(snapE()); if (EH.undo.length > 200) EH.undo.shift(); EH.redo = []; fn(); afterEdit(); scheduleEditSave(); }
+function editChange(fn) { EH.undo.push(snapE()); if (EH.undo.length > 200) EH.undo.shift(); EH.redo = []; fn(); afterEdit(); scheduleEditSave(); }
 const editSelValid = () => !sel || !['remove', 'ecut', 'framing', 'guide'].includes(sel.kind) || [...E.removes, ...E.cuts, ...E.frames, ...E.guides].some((x) => x.id === sel.id);
-function editUndo() { if (!C.isOwner()) return; if (!EH.undo.length) return toast('אין עריכה לבטל'); EH.redo.push(snapE()); applySnap(EH.undo.pop()); if (!editSelValid()) sel = null; afterEdit(); renderComposer(false); scheduleEditSave(); toast('בוטל'); }
-function editRedo() { if (!C.isOwner()) return; if (!EH.redo.length) return toast('אין מה לבצע שוב'); EH.undo.push(snapE()); applySnap(EH.redo.pop()); if (!editSelValid()) sel = null; afterEdit(); renderComposer(false); scheduleEditSave(); toast('בוצע שוב'); }
+function editUndo() { if (!EH.undo.length) return toast('אין עריכה לבטל'); EH.redo.push(snapE()); applySnap(EH.undo.pop()); if (!editSelValid()) sel = null; afterEdit(); renderComposer(false); scheduleEditSave(); toast('בוטל'); }
+function editRedo() { if (!EH.redo.length) return toast('אין מה לבצע שוב'); EH.undo.push(snapE()); applySnap(EH.redo.pop()); if (!editSelValid()) sel = null; afterEdit(); renderComposer(false); scheduleEditSave(); toast('בוצע שוב'); }
 function afterEdit() { renderEditRow(); renderEditStat(); paintOverlay(); renderNotes(); updateCounts(); renderSrcList(); }
 
 // K: קאט במקום של הסמן. Q: מהקאט הקודם עד הסמן. W: מהסמן עד הקאט הבא (Ripple Trim של פרימייר).
@@ -600,7 +600,7 @@ function updateFramePanel() {
 
 // ---------- ציר הזמן: שורת העריכה ופסי ההוצאה על כל הציר ----------
 function editRowHTML() {
-  const rm = E.removes.map((r) => { const x = X(r.fromFrame), w = Math.max(4, X(r.toFrame) - x); return `<button class="rmb${sel?.kind === 'remove' && sel.id === r.id ? ' sel' : ''}" data-id="${esc(r.id)}" data-kind="remove" style="left:${x.toFixed(1)}px;width:${w.toFixed(1)}px" title="הוצא (${r.how}) · ${tc(r.fromFrame)}-${tc(r.toFrame - 1)} · ${secs(r.fromFrame, r.toFrame)}">${w > 46 ? 'הוצא ' + secs(r.fromFrame, r.toFrame) : ''}</button>`; }).join('');
+  const rm = E.removes.map((r) => { const x = X(r.fromFrame), w = Math.max(4, X(r.toFrame) - x); return `<button class="rmb${sel?.kind === 'remove' && sel.id === r.id ? ' sel' : ''}${r.by && r.by !== C.me.email ? ' prop' : ''}" data-id="${esc(r.id)}" data-kind="remove" style="left:${x.toFixed(1)}px;width:${w.toFixed(1)}px" title="הוצא (${r.how}) · ${tc(r.fromFrame)}-${tc(r.toFrame - 1)} · ${secs(r.fromFrame, r.toFrame)}">${w > 46 ? 'הוצא ' + secs(r.fromFrame, r.toFrame) : ''}</button>`; }).join('');
   const fr = E.frames.map((f) => { const x = X(f.fromFrame), w = Math.max(4, X(f.toFrame) - x); return `<button class="frb${sel?.kind === 'framing' && sel.id === f.id ? ' sel' : ''}" data-id="${esc(f.id)}" data-kind="framing" style="left:${x.toFixed(1)}px;width:${w.toFixed(1)}px" title="מסגור · ${esc(LAYERS.find((l) => l.id === f.layer)?.label || f.layer)}"></button>`; }).join('');
   const ct = E.cuts.map((c) => `<button class="ecutb${sel?.kind === 'ecut' && sel.id === c.id ? ' sel' : ''}" data-id="${esc(c.id)}" data-kind="ecut" style="left:${X(c.frame).toFixed(1)}px" title="קאט שהוספת · ${tc(c.frame)}">${I.cutS}</button>`).join('');
   return fr + rm + ct;
@@ -1656,7 +1656,7 @@ function renderSrcList() {
 }
 
 // ---------- cloud room (Harel 20.10.2026): roles, who is here, live notes ----------
-const byLine = (e) => { const who = e.n?.author || e.r?.by || e.d?.by; return who && who !== C.me.email ? '<span class="by">' + esc(who.split('@')[0]) + '</span>' : ''; };
+const byLine = (e) => { const who = e.n?.author || e.r?.by || e.d?.by || e.x?.by; return who && who !== C.me.email ? '<span class="by">' + esc(who.split('@')[0]) + '</span>' : ''; };
 let following = null, people = [];
 function cloudUI() {
   const owner = C.isOwner();
@@ -1664,11 +1664,11 @@ function cloudUI() {
   $('whoami').textContent = C.me.name + (owner ? '' : ' · צופה ומעיר');
   $('logout').onclick = C.signOut;
   $('peopleBtn').hidden = !owner; $('peopleBtn').onclick = openPeople;
-  if (!owner) { for (const id of ['sendTop', 'sendBottom']) $(id).hidden = true; $('tools')?.querySelector('.tools-row')?.remove(); $('delivery').textContent = 'ההערות שלך נשמרות ונראות להראל מיד. הוא שולח אותן לקלוד.'; }
+  if (!owner) { for (const id of ['sendTop', 'sendBottom']) $(id).hidden = true; $('delivery').textContent = 'ההערות, הקאטים וההוצאות שלך הם הצעות: הם נשמרים ונראים להראל מיד, והוא מחליט ושולח לקלוד.'; }
   const report = C.live({
     onNote: (n) => { upsertNote(n); renderNotes(); paintOverlay(); updateCounts(); },
     onLanes: (s) => { if (dirty) return; L = { ...s }; if (document.activeElement !== $('general')) $('general').value = L.general || ''; afterChange(); paintMarks?.(); },
-    onEdit: (s) => { E = normEdit(s); afterEdit(); },
+    onEdit: (s) => { if (editDirty) return; E = normEdit(s); afterEdit(); },
     onPresence: (list) => { people = list; renderPeople(); follow(); },
   });
   setInterval(() => report(cur, !V.paused), 300);

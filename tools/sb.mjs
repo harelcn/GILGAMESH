@@ -19,6 +19,22 @@ export async function put(path, buf, type) {
   const r = await fetch(`${URL_}/storage/v1/object/review/${encodeURI(path)}`, { method: 'POST', headers: { ...H, 'Content-Type': type, 'x-upsert': 'true' }, body: buf });
   if (!r.ok) throw new Error(`upload ${path}: ${r.status} ${(await r.text()).slice(0, 300)}`);
 }
+export async function list(prefix) {             // every file under a folder (recursive)
+  const out = [];
+  const r = await fetch(`${URL_}/storage/v1/object/list/review`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefix, limit: 1000 }) });
+  if (!r.ok) return out;
+  for (const it of await r.json()) {
+    const p = prefix.replace(/\/$/, '') + '/' + it.name;
+    if (it.id) out.push(p); else out.push(...await list(p));
+  }
+  return out;
+}
+export async function remove(paths) {
+  for (let i = 0; i < paths.length; i += 100) {
+    const r = await fetch(`${URL_}/storage/v1/object/review`, { method: 'DELETE', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes: paths.slice(i, i + 100) }) });
+    if (!r.ok) throw new Error(`delete: ${r.status} ${(await r.text()).slice(0, 200)}`);
+  }
+}
 export async function get(path) {
   const r = await fetch(`${URL_}/storage/v1/object/review/${encodeURI(path)}`, { headers: H });
   if (!r.ok) throw new Error(`download ${path}: ${r.status}`);
