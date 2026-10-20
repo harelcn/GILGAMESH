@@ -1613,6 +1613,7 @@ function renderSrc(force = false) {
     ${takes.length > 1 ? `<div class="src-takes">${takes.map((f, i) => `<button class="src-take${f === file ? ' on' : ''}" data-f="${esc(f)}" title="${esc(base(f))}">${i ? 'גרסה ' + (i + 1) : 'בסרט'}<span>${esc(base(f))}</span></button>`).join('')}</div>` : ''}
     <div class="src-video"><video id="srcV" playsinline preload="metadata" controls src="${FILE(file)}"></video></div>
     <div class="src-shots" id="srcShots"></div>
+    <div class="src-io"><button class="tbx" data-io="in">⟦ סמן התחלה</button><button class="tbx" data-io="out">סמן סוף ⟧</button><span class="mono" id="srcRange"></span></div>
     <div class="src-acts">
       <button class="btn" data-sw="replace" disabled>החלף את השוט הזה</button>
       <button class="btn ghost" data-sw="before" disabled>הוסף לפני</button>
@@ -1630,11 +1631,18 @@ function renderSrc(force = false) {
     }).join('') : '<div class="src-empty">טוען את ההנפשה…</div>';
     $('srcShots').querySelectorAll('.src-shot').forEach((b) => b.onclick = () => {
       const s = shots.find((x) => x.n === +b.dataset.n);
-      srcPick = s; srcLoop = s; drawShots();
-      box.querySelectorAll('[data-sw]').forEach((x) => x.disabled = false);
+      srcPick = s; srcLoop = s; drawShots(); showRange();
       V.pause(); sv.currentTime = s.a + 0.01; sv.play().catch(() => {});
     });
   };
+  // הראל 21.10: "לבחור חלקים מההנפשות ולשים בטיימליין" - any part, not only a whole shot
+  const showRange = () => { $('srcRange').textContent = srcPick ? `${fmtS(srcPick.a)}–${fmtS(srcPick.b)} שנ׳ · ${fmtS(srcPick.b - srcPick.a)} שנ׳` : 'בחרו שוט, או סמנו התחלה וסוף בזמן הנגן'; box.querySelectorAll('[data-sw]').forEach((x) => x.disabled = !srcPick); };
+  box.querySelectorAll('[data-io]').forEach((b) => b.onclick = () => {
+    const t = sv.currentTime, dur = Number.isFinite(sv.duration) ? sv.duration : t + 2;
+    if (b.dataset.io === 'in') srcPick = { n: null, a: t, b: srcPick && srcPick.b > t + 0.1 ? srcPick.b : Math.min(dur, t + 2) };
+    else srcPick = { n: null, a: srcPick && srcPick.a < t - 0.1 ? srcPick.a : Math.max(0, t - 2), b: t };
+    srcLoop = srcPick; drawShots(); showRange();
+  });
   sv.addEventListener('loadedmetadata', drawShots);
   sv.addEventListener('play', () => V.pause());
   sv.addEventListener('timeupdate', () => { if (srcLoop && sv.currentTime >= srcLoop.b - 0.03) sv.currentTime = srcLoop.a + 0.01; });
@@ -1642,11 +1650,15 @@ function renderSrc(force = false) {
   if (!C.isOwner()) box.querySelector('.src-acts')?.remove();
   box.querySelectorAll('[data-sw]').forEach((b) => b.onclick = () => {
     if (!srcPick) return;
-    const action = b.dataset.sw;
-    editChange(() => E.swaps.push({ id: uuid(), segment: seg.id, action, file, sourceIn: Math.round(srcPick.a * 1000) / 1000, sourceOut: Math.round(srcPick.b * 1000) / 1000, shot: srcPick.n, note: '' }));
-    toast(`${action === 'replace' ? 'שוט ' + seg.index + ' יוחלף' : 'יתווסף ' + SW_LABEL[action] + ' שוט ' + seg.index} בשוט ${srcPick.n} מ${file === seg.file ? 'ההנפשה' : base(file)}`);
+    const action = b.dataset.sw, r3 = (x) => Math.round(x * 1000) / 1000;
+    const piece = { src: file, sa: r3(srcPick.a), sb: r3(srcPick.b), label: (file === seg.file ? '' : base(file) + ' · ') + (srcPick.n ? 'שוט ' + srcPick.n : fmtS(srcPick.a) + '–' + fmtS(srcPick.b)) };
+    const ps = arrPieces().slice(); let i = ps.findIndex((q) => q.seg === seg.id); if (i < 0) i = ps.length - 1;
+    if (action === 'replace') ps.splice(i, 1, piece); else ps.splice(action === 'before' ? i : i + 1, 0, piece);
+    arrSel = null; arrSet(ps);
+    const ab = $('arrCard'); if (ab.hidden) { ab.hidden = false; renderArrange(); }
+    toast(`${action === 'replace' ? 'שוט ' + seg.index + ' הוחלף' : 'נוסף ' + SW_LABEL[action] + ' שוט ' + seg.index} בטיימליין · "נגן את הסידור" כדי לראות`, 'ok');
   });
-  drawShots(); renderSrcList();
+  drawShots(); showRange(); renderSrcList();
 }
 function renderSrcList() {
   const list = $('srcList');
@@ -1661,13 +1673,21 @@ function renderSrcList() {
 // jumps from piece to piece inside the film, no render). Saved as E.arrange = [{seg, a, b}] in film frames; Claude renders it.
 let arrSel = null, arrPlaying = null, arrDrag = null;
 const arrSegs = () => M?.segments || [];
+const arrKey = (p, i) => (p.src ? 'src:' + i : p.seg);
 const arrSeg = (id) => arrSegs().find((s) => s.id === id);
 function arrPieces() {
   if (E.arrange?.length) return E.arrange;
   return arrSegs().filter((s) => !E.removes.some((r) => r.fromFrame <= s.startFrame && r.toFrame >= s.endFrame)).map((s) => ({ seg: s.id, a: s.startFrame, b: s.endFrame }));
 }
-const arrLen = (ps) => ps.reduce((t, p) => t + p.b - p.a, 0);
-function arrSet(ps) { editChange(() => { E.arrange = ps.map((p) => ({ seg: p.seg, a: p.a, b: p.b })); }); renderArrange(); }
+const arrF = (p) => (p.src ? Math.max(1, Math.round((p.sb - p.sa) * FPS)) : p.b - p.a);
+const arrLen = (ps) => ps.reduce((t, p) => t + arrF(p), 0);
+let OV = null;
+function arrOverlay(show) {
+  if (!OV) { OV = document.createElement('video'); Object.assign(OV, { playsInline: true, preload: 'auto' }); OV.className = 'arr-ov'; V.parentElement.appendChild(OV); }
+  OV.hidden = !show; OV.muted = V.muted; if (!show) OV.pause();
+  return OV;
+}
+function arrSet(ps) { editChange(() => { E.arrange = ps.map((p) => (p.src ? { src: p.src, sa: p.sa, sb: p.sb, label: p.label || '' } : { seg: p.seg, a: p.a, b: p.b })); }); renderArrange(); }
 function renderArrange() {
   const box = $('arrCard'); if (!box || box.hidden) return;
   const ps = arrPieces(), orig = arrSegs().reduce((t, s) => t + s.endFrame - s.startFrame, 0), len = arrLen(ps);
@@ -1679,8 +1699,10 @@ function renderArrange() {
       <button class="tbx" id="arrReset" ${moved ? '' : 'disabled'}>אפס</button>
       <button class="tbx" id="arrClose">סגור</button></div>
     <div class="arr-hint">גוררים שוט כדי להזיז אותו · לוחצים על שוט כדי לקצר את ההתחלה או הסוף שלו</div>
-    <div class="arr-strip" id="arrStrip">${ps.map((p, i) => { const s = arrSeg(p.seg) || {}; const trimmed = p.a > s.startFrame || p.b < s.endFrame;
-      return `<div class="arr-piece${arrSel === p.seg ? ' sel' : ''}${arrPlaying?.i === i ? ' now' : ''}" data-i="${i}" style="flex-basis:${Math.max(64, Math.min(220, (p.b - p.a) / FPS * 42))}px"><b>${s.index ?? '?'}</b><span>${esc(String(s.shot || '').slice(0, 28))}</span><em>${((p.b - p.a) / FPS).toFixed(2)} שנ׳${trimmed ? ' ✂' : ''}</em></div>`; }).join('')}</div>
+    <div class="arr-strip" id="arrStrip">${ps.map((p, i) => { const key = arrKey(p, i), w = Math.max(64, Math.min(220, arrF(p) / FPS * 42));
+      if (p.src) return `<div class="arr-piece src${arrSel === key ? ' sel' : ''}${arrPlaying?.i === i ? ' now' : ''}" data-i="${i}" style="flex-basis:${w}px"><b>✚ מההנפשה</b><span>${esc(String(p.label || p.src.split('/').pop()).slice(0, 28))}</span><em>${(arrF(p) / FPS).toFixed(2)} שנ׳</em></div>`;
+      const s = arrSeg(p.seg) || {}; const trimmed = p.a > s.startFrame || p.b < s.endFrame;
+      return `<div class="arr-piece${arrSel === key ? ' sel' : ''}${arrPlaying?.i === i ? ' now' : ''}" data-i="${i}" style="flex-basis:${w}px"><b>${s.index ?? '?'}</b><span>${esc(String(s.shot || '').slice(0, 28))}</span><em>${((p.b - p.a) / FPS).toFixed(2)} שנ׳${trimmed ? ' ✂' : ''}</em></div>`; }).join('')}</div>
     <div class="arr-trim" id="arrTrim"></div>`;
   $('arrPlay').onclick = () => (arrPlaying ? arrStop() : arrStart(0));
   $('arrReset').onclick = () => { editChange(() => { E.arrange = null; }); arrSel = null; renderArrange(); };
@@ -1699,11 +1721,11 @@ function renderArrange() {
       const d = arrDrag; arrDrag = null;
       strip.querySelectorAll('.arr-piece').forEach((o) => o.classList.remove('drop-l', 'drop-r'));
       if (!d) return;
-      if (!d.moved) { arrSel = arrSel === arrPieces()[d.from].seg ? null : arrPieces()[d.from].seg; renderArrange(); return; }
+      if (!d.moved) { const k = arrKey(arrPieces()[d.from], d.from); arrSel = arrSel === k ? null : k; renderArrange(); return; }
       const t = arrTarget(strip, ev.clientX); if (!t) return;
       const ps2 = arrPieces().slice(), [piece] = ps2.splice(d.from, 1);
       let to = +t.el.dataset.i + (t.after ? 1 : 0); if (to > d.from) to--;
-      ps2.splice(to, 0, piece); arrSel = piece.seg; arrSet(ps2);
+      ps2.splice(to, 0, piece); arrSel = piece.src ? 'src:' + to : piece.seg; arrSet(ps2);
     };
   });
   renderTrim();
@@ -1716,10 +1738,12 @@ function arrTarget(strip, x) {
   return null;
 }
 function renderTrim() {
-  const box = $('arrTrim'), ps = arrPieces(), i = ps.findIndex((p) => p.seg === arrSel);
+  const box = $('arrTrim'), ps = arrPieces(), i = ps.findIndex((p, j) => arrKey(p, j) === arrSel);
   if (!box) return;
   if (i < 0) { box.innerHTML = ''; return; }
-  const p = ps[i], s = arrSeg(p.seg);
+  const p = ps[i];
+  if (p.src) return renderSrcTrim(box, p, i);
+  const s = arrSeg(p.seg);
   box.innerHTML = `<div class="arr-trim-row"><b>שוט ${s.index} · ${esc(s.shot)}</b>
     <label>התחלה <input type="range" id="trA" min="${s.startFrame}" max="${s.endFrame - 2}" value="${p.a}"></label>
     <label>סוף <input type="range" id="trB" min="${s.startFrame + 2}" max="${s.endFrame}" value="${p.b}"></label>
@@ -1733,17 +1757,41 @@ function renderTrim() {
   $('trLoop').onclick = () => playRange(p.a, p.b, true);
   $('trDel').onclick = () => { arrSel = null; arrSet(arrPieces().filter((q) => q.seg !== p.seg)); };
 }
+let srcTrimLoop = null;
+function renderSrcTrim(box, p, i) {
+  const dur = M.sources?.[p.src]?.duration || p.sb + 5, st = 1 / FPS;
+  box.innerHTML = `<div class="arr-trim-row"><b>✚ ${esc(p.label || '')}</b>
+    <label>התחלה <input type="range" id="trA" min="0" max="${(dur - 0.1).toFixed(3)}" step="${st}" value="${p.sa}"></label>
+    <label>סוף <input type="range" id="trB" min="0.1" max="${dur.toFixed(3)}" step="${st}" value="${p.sb}"></label>
+    <span class="mono" id="trLen">${(p.sb - p.sa).toFixed(2)} שנ׳</span>
+    <button class="tbx" id="trLoop">▶ הקטע</button><button class="tbx" id="trDel">הוצא מהסידור</button></div>`;
+  const live = () => { $('trLen').textContent = `${Math.max(0.04, +$('trB').value - +$('trA').value).toFixed(2)} שנ׳`; };
+  const commit = () => { let a = +$('trA').value, b = +$('trB').value; if (b - a < 0.1) b = a + 0.1;
+    const ps2 = arrPieces().slice(); ps2[i] = { ...p, sa: Math.round(a * 1000) / 1000, sb: Math.round(b * 1000) / 1000 }; arrSet(ps2); loopSrc(ps2[i]); };
+  $('trA').oninput = live; $('trB').oninput = live; $('trA').onchange = commit; $('trB').onchange = commit;
+  $('trLoop').onclick = () => loopSrc(p);
+  $('trDel').onclick = () => { arrSel = null; const ps2 = arrPieces().slice(); ps2.splice(i, 1); arrSet(ps2); };
+}
+function loopSrc(p) {
+  V.pause(); const ov = arrOverlay(true);
+  if (ov.dataset.src !== p.src) { ov.src = FILE(p.src); ov.dataset.src = p.src; }
+  srcTrimLoop = p; ov.currentTime = p.sa; ov.play().catch(() => {});
+}
 function arrStart(i) {
   const ps = arrPieces(); if (!ps[i]) return arrStop();
-  arrPlaying = { i, prev: editedPreview }; editedPreview = false; playUntil = null;
-  V.currentTime = (ps[i].a + 0.5) / FPS; V.play().catch(() => {}); renderArrange();
+  arrPlaying = { i, prev: arrPlaying ? arrPlaying.prev : editedPreview }; editedPreview = false; playUntil = null; srcTrimLoop = null;
+  const p = ps[i];
+  if (p.src) { V.pause(); const ov = arrOverlay(true); if (ov.dataset.src !== p.src) { ov.src = FILE(p.src); ov.dataset.src = p.src; } ov.currentTime = p.sa; ov.play().catch(() => {}); }
+  else { arrOverlay(false); V.currentTime = (p.a + 0.5) / FPS; V.play().catch(() => {}); }
+  renderArrange();
 }
-function arrStop() { if (!arrPlaying) return; editedPreview = arrPlaying.prev; arrPlaying = null; V.pause(); renderArrange(); }
+function arrStop() { srcTrimLoop = null; if (OV) arrOverlay(false); if (!arrPlaying) return; editedPreview = arrPlaying.prev; arrPlaying = null; V.pause(); renderArrange(); }
 setInterval(() => {
-  if (!arrPlaying || V.paused) return;
+  if (srcTrimLoop && OV && !OV.hidden && OV.currentTime >= srcTrimLoop.sb - 0.03) OV.currentTime = srcTrimLoop.sa;
+  if (!arrPlaying) return;
   const ps = arrPieces(), p = ps[arrPlaying.i]; if (!p) return arrStop();
-  const f = V.currentTime * FPS;
-  if (f >= p.b - 0.5 || f < p.a - 2) { if (arrPlaying.i + 1 >= ps.length) return arrStop(); arrPlaying.i++; V.currentTime = (ps[arrPlaying.i].a + 0.5) / FPS; renderArrange(); }
+  const done = p.src ? (OV && (OV.currentTime >= p.sb - 0.03 || OV.ended)) : (!V.paused && (V.currentTime * FPS >= p.b - 0.5 || V.currentTime * FPS < p.a - 2));
+  if (done) { if (arrPlaying.i + 1 >= ps.length) return arrStop(); arrStart(arrPlaying.i + 1); }
 }, 20);
 function openArrange() { const box = $('arrCard'); box.hidden = !box.hidden; if (!box.hidden) { renderArrange(); box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } else arrStop(); }
 
