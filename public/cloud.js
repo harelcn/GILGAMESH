@@ -5,7 +5,9 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 
 const CFG = window.ROOM_CONFIG || {};
-export const sb = createClient(CFG.url, CFG.anon, { auth: { persistSession: true, autoRefreshToken: true } });
+// config.js comes from the Vercel build; without it (a local preview) the room explains instead of crashing
+export const configured = !!(CFG.url && CFG.anon);
+export const sb = configured ? createClient(CFG.url, CFG.anon, { auth: { persistSession: true, autoRefreshToken: true } }) : null;
 const BUCKET = 'review';
 
 export let me = null;          // { id, email, name, role }
@@ -14,6 +16,7 @@ const signed = new Map();      // storage path -> signed url (or blob url for fr
 
 // ---------- session ----------
 export async function requireMember() {
+  if (!configured) throw new Error('חסרות הגדרות החיבור ל-Supabase (config.js). החדר עובד בכתובת של Vercel אחרי הבנייה.');
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { location.replace('./?next=' + encodeURIComponent(location.pathname + location.search)); throw new Error('לא מחובר'); }
   const { data: p, error } = await sb.from('profiles').select('id,email,display_name,role').eq('id', session.user.id).single();

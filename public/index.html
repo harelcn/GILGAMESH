@@ -46,8 +46,14 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px}
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 const C = window.ROOM_CONFIG || {};
-const sb = createClient(C.url, C.anon, { auth: { persistSession: true, autoRefreshToken: true } });
 const $ = (id) => document.getElementById(id);
+if (!C.url || !C.anon) {
+  // config.js is written by the Vercel build from the project's environment variables; a local preview has none
+  $('msg').textContent = 'חסרות הגדרות החיבור ל-Supabase (config.js). הדף עובד בכתובת של Vercel אחרי הבנייה.';
+  $('msg').className = 'msg err'; $('go').disabled = true;
+  throw new Error('ROOM_CONFIG missing');
+}
+const sb = createClient(C.url, C.anon, { auth: { persistSession: true, autoRefreshToken: true } });
 const next = new URLSearchParams(location.search).get('next') || './room.html';
 let mode = 'in';
 const say = (t, k = '') => { $('msg').textContent = t; $('msg').className = 'msg ' + k; };
