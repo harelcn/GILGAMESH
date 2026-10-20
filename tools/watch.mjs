@@ -41,7 +41,9 @@ async function show(sub) {
 }
 
 for (;;) {
-  const subs = await rest('GET', 'submissions?status=eq.new&order=created_at.asc&select=*');
+  let subs;
+  try { subs = await rest('GET', 'submissions?status=eq.new&order=created_at.asc&select=*'); }
+  catch (e) { if (ONCE) throw e; console.error('רשת: ' + e.message + ' · מנסה שוב'); await new Promise((r) => setTimeout(r, 30000)); continue; }
   for (const s of subs) await show(s);
   if (subs.length) break;
   if (ONCE) { console.log('אין בקשות שממתינות.'); break; }
