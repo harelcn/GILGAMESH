@@ -79,18 +79,41 @@ async function grabFrame(f) {
 // ---------- the room's routes ----------
 const vparam = () => new URLSearchParams(location.search).get('version');
 async function loadVersion() {
-  let q = sb.from('versions').select('*');
-  q = vparam() ? q.eq('id', vparam()) : q.eq('is_current', true).order('created_at', { ascending: false }).limit(1);
-  const { data, error } = await q;
+  const current = () => sb.from('versions').select('*').eq('is_current', true).order('created_at', { ascending: false }).limit(1);
+  let { data, error } = await (vparam() ? sb.from('versions').select('*').eq('id', vparam()) : current());
   if (error) throw error;
+  // a link to a version that was removed (only the last two are kept): open the current one instead of a blank room
+  if (!data?.length && vparam()) {
+    history.replaceState(null, '', location.pathname);
+    ({ data, error } = await current());
+    if (error) throw error;
+  }
   if (!data?.length) throw new Error('עוד לא הועלתה גרסה לחדר.');
   version = data[0];
+  watchNewVersion();
   const { data: all } = await sb.from('versions').select('id,label,created_at').eq('project_id', version.project_id).order('created_at');
   version.model.versions = (all || []).map((v) => ({ id: v.id, label: v.label })).reverse();
   version.model.version = version.id;
   return version;
 }
 export const currentVersion = () => version;
+
+// an open room learns that a new version was published (Harel 21.10: the partner's screen stayed on a removed version)
+let watching = false;
+function watchNewVersion() {
+  if (watching) return; watching = true;
+  setInterval(async () => {
+    if (vparam() || document.getElementById('newVerBar')) return;
+    const { data } = await sb.from('versions').select('id,label').eq('is_current', true).limit(1);
+    const v = data?.[0]; if (!v || v.id === version?.id) return;
+    const bar = document.createElement('button');
+    bar.id = 'newVerBar'; bar.textContent = `עלתה ${v.label} · לחצו לטעינה`;
+    Object.assign(bar.style, { position: 'fixed', top: '12px', left: '50%', transform: 'translateX(-50%)', zIndex: 9999,
+      padding: '10px 18px', borderRadius: '999px', border: '0', background: '#f5c542', color: '#111', font: '600 14px system-ui', cursor: 'pointer', boxShadow: '0 4px 18px rgba(0,0,0,.4)' });
+    bar.onclick = () => location.replace(location.pathname);
+    document.body.appendChild(bar);
+  }, 45000);
+}
 
 export async function cloudReq(route, body, q = '') {
   if (route === 'data') {
