@@ -180,7 +180,9 @@ export async function cloudReq(route, body, q = '') {
       return out;
     };
     const state = { cuts: merge(body.cuts, o.cuts), removes: merge(body.removes, o.removes), frames: merge(body.frames, o.frames), guides: merge(body.guides, o.guides),
-      swaps: isOwner() ? merge(body.swaps, o.swaps) : (o.swaps || []), by: me.email };
+      swaps: isOwner() ? merge(body.swaps, o.swaps) : (o.swaps || []),
+      arrange: isOwner() ? (body.arrange?.length ? body.arrange : null) : (o.arrange || null),   // the new order of shots: owner only
+      by: me.email };
     const revision = (cur?.revision || 0) + 1;
     const res = cur ? await sb.from('edit_states').update({ state, revision, updated_at: t }).eq('version_id', version.id)
                     : await sb.from('edit_states').insert({ version_id: version.id, state, revision });

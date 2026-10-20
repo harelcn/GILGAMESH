@@ -30,10 +30,16 @@ async function show(sub) {
   if ((L.general || '').trim()) out.push('', 'הערה כללית: ' + L.general);
   const E = p.edit || {};
   const cnt = ['cuts', 'removes', 'frames', 'guides', 'swaps'].map((k) => (E[k] || []).length);
-  if (cnt.some(Boolean)) {
+  if (cnt.some(Boolean) || (E.arrange || []).length) {
     out.push('', `עריכה בחדר: ${cnt[0]} קאטים · ${cnt[1]} הוצאות · ${cnt[2]} מסגורים · ${cnt[3]} קווי עזר · ${cnt[4]} שוטים מההנפשות`);
     for (const c of E.cuts || []) out.push(`  קאט: פריים ${c.frame + 1} (${tc(c.frame, fps)})${c.by ? ' · ' + c.by : ''}`);
     for (const r of E.removes || []) out.push(`  הוצאה (${r.how}): פריימים ${r.fromFrame + 1}-${r.toFrame} (${tc(r.fromFrame, fps)}-${tc(r.toFrame - 1, fps)})${r.note ? ' · ' + r.note : ''}${r.by ? ' · ' + r.by : ''}`);
+    if ((E.arrange || []).length) {
+      const len = E.arrange.reduce((t, x) => t + x.b - x.a, 0);
+      out.push(`  סידור שוטים חדש (${E.arrange.length} שוטים, ${(len / fps).toFixed(2)} שנ׳). הסדר המלא מההתחלה לסוף:`);
+      for (const [i, x] of E.arrange.entries()) { const g = (p.segments || []).find((q) => q.id === x.seg) || {}; const cut = x.a > g.startFrame || x.b < g.endFrame;
+        out.push(`    ${i + 1}. שוט ${g.index ?? '?'} (${g.shot ?? ''}) · פריימים ${x.a + 1}-${x.b}${cut ? ` (מקוצר מתוך ${g.startFrame + 1}-${g.endFrame})` : ''} · ${((x.b - x.a) / fps).toFixed(2)} שנ׳`); }
+    }
     for (const w of E.swaps || []) { const s = (p.segments || []).find((x) => x.id === w.segment); out.push(`  שוט מההנפשה · ${{ replace: 'החלף את', before: 'הוסף לפני', after: 'הוסף אחרי' }[w.action]} שוט ${s?.index ?? '?'} (${s?.shot ?? ''}) ← ${w.file}${w.shot ? ' · שוט ' + w.shot : ''} · ${w.sourceIn.toFixed(3)}-${w.sourceOut.toFixed(3)}s`); }
   }
   console.log(out.join('\n'));

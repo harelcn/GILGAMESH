@@ -310,10 +310,10 @@ function drawShape(ctx, s, w, h) {
 // כל הזמנים בפריימים של הסרט הנוכחי. מה שהוצא נשאר בקובץ: בתצוגה הערוכה מדלגים עליו, ובשליחה הוא מגיע אליי כרשימת הוצאות.
 const uuid = () => crypto.randomUUID();
 const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
-function normEdit(e) { return { revision: e?.revision || 0, cuts: e?.cuts || [], removes: e?.removes || [], frames: e?.frames || [], guides: e?.guides || [], swaps: e?.swaps || [] }; }
+function normEdit(e) { return { revision: e?.revision || 0, cuts: e?.cuts || [], removes: e?.removes || [], frames: e?.frames || [], guides: e?.guides || [], swaps: e?.swaps || [], arrange: e?.arrange?.length ? e.arrange : null }; }
 const removedAt = (f) => E.removes.find((r) => f >= r.fromFrame && f < r.toFrame);
 const removedFrames = () => E.removes.reduce((s, r) => s + r.toFrame - r.fromFrame, 0);
-const editCount = () => E.cuts.length + E.removes.length + E.frames.length + E.guides.length + E.swaps.length;
+const editCount = () => E.cuts.length + E.removes.length + E.frames.length + E.guides.length + E.swaps.length + (E.arrange?.length ? 1 : 0);
 function cutPoints() {
   const s = new Set([0, N]);
   for (const c of CUTS) s.add(c.frame);
@@ -323,7 +323,7 @@ function cutPoints() {
 }
 
 // שמירה (כמו המסלולים: השהיה קצרה, תור אחד, 409 = נשמר בחלון אחר)
-function editBody() { const strip = (l) => l.map(({ at, ...x }) => x); return { revision: E.revision, cuts: strip(E.cuts), removes: strip(E.removes), frames: strip(E.frames), guides: strip(E.guides), swaps: strip(E.swaps) }; }
+function editBody() { const strip = (l) => l.map(({ at, ...x }) => x); return { revision: E.revision, cuts: strip(E.cuts), removes: strip(E.removes), frames: strip(E.frames), guides: strip(E.guides), swaps: strip(E.swaps), arrange: E.arrange?.length ? E.arrange : null }; }
 function scheduleEditSave() { editDirty = true; setSave('saving'); clearTimeout(editT); editT = setTimeout(flushEdit, 400); }
 function flushEdit() { clearTimeout(editT); editChain = editChain.then(saveEdit, saveEdit); return editChain; }
 async function saveEdit() {
@@ -340,13 +340,13 @@ async function saveEdit() {
   }
 }
 // ביטול וביצוע שוב לכל פעולת עריכה
-const snapE = () => JSON.stringify({ cuts: E.cuts, removes: E.removes, frames: E.frames, guides: E.guides, swaps: E.swaps });
-function applySnap(sn) { const o = JSON.parse(sn); E.cuts = o.cuts; E.removes = o.removes; E.frames = o.frames; E.guides = o.guides; E.swaps = o.swaps || []; }
+const snapE = () => JSON.stringify({ cuts: E.cuts, removes: E.removes, frames: E.frames, guides: E.guides, swaps: E.swaps, arrange: E.arrange || null });
+function applySnap(sn) { const o = JSON.parse(sn); E.cuts = o.cuts; E.removes = o.removes; E.frames = o.frames; E.guides = o.guides; E.swaps = o.swaps || []; E.arrange = o.arrange || null; }
 function editChange(fn) { EH.undo.push(snapE()); if (EH.undo.length > 200) EH.undo.shift(); EH.redo = []; fn(); afterEdit(); scheduleEditSave(); }
 const editSelValid = () => !sel || !['remove', 'ecut', 'framing', 'guide'].includes(sel.kind) || [...E.removes, ...E.cuts, ...E.frames, ...E.guides].some((x) => x.id === sel.id);
 function editUndo() { if (!EH.undo.length) return toast('אין עריכה לבטל'); EH.redo.push(snapE()); applySnap(EH.undo.pop()); if (!editSelValid()) sel = null; afterEdit(); renderComposer(false); scheduleEditSave(); toast('בוטל'); }
 function editRedo() { if (!EH.redo.length) return toast('אין מה לבצע שוב'); EH.undo.push(snapE()); applySnap(EH.redo.pop()); if (!editSelValid()) sel = null; afterEdit(); renderComposer(false); scheduleEditSave(); toast('בוצע שוב'); }
-function afterEdit() { renderEditRow(); renderEditStat(); paintOverlay(); renderNotes(); updateCounts(); renderSrcList(); }
+function afterEdit() { renderEditRow(); renderEditStat(); paintOverlay(); renderNotes(); updateCounts(); renderSrcList(); renderArrange(); }
 
 // K: קאט במקום של הסמן. Q: מהקאט הקודם עד הסמן. W: מהסמן עד הקאט הבא (Ripple Trim של פרימייר).
 // Delete: כל הקטע שבין שני הקאטים סביב הסמן (Ripple Delete). רן, 4.10: "ניסיתי לסמן לך בין כת לכת, איפה לחתוך".
@@ -1536,6 +1536,7 @@ function bindUI() {
   $('actCut').onclick = noteCut;
   $('actRange').onclick = rangeKey;
   $('sendTop').onclick = $('sendBottom').onclick = send;
+  if ($('tbArr')) $('tbArr').onclick = openArrange;
   $('tbCut').onclick = addCut; $('tbQ').onclick = () => ripple('Q'); $('tbW').onclick = () => ripple('W'); $('tbDel').onclick = () => ripple('DEL');
   $('tbUndo').onclick = editUndo; $('tbRedo').onclick = editRedo;
   $('tbFrame').onclick = () => setMode(mode === 'frame' ? null : 'frame');
@@ -1655,6 +1656,97 @@ function renderSrcList() {
   list.querySelectorAll('.src-x').forEach((b) => b.onclick = () => editChange(() => { E.swaps = E.swaps.filter((w) => w.id !== b.dataset.id); }));
 }
 
+// ---------- סידור שוטים (הראל, 21.10.2026): "לתת לי להזיז שם קאטים ולשחק עם העריכה" ----------
+// The cut as a strip of shots: drag a shot to a new place, shorten its head or tail, play the new order at once (the player
+// jumps from piece to piece inside the film, no render). Saved as E.arrange = [{seg, a, b}] in film frames; Claude renders it.
+let arrSel = null, arrPlaying = null, arrDrag = null;
+const arrSegs = () => M?.segments || [];
+const arrSeg = (id) => arrSegs().find((s) => s.id === id);
+function arrPieces() {
+  if (E.arrange?.length) return E.arrange;
+  return arrSegs().filter((s) => !E.removes.some((r) => r.fromFrame <= s.startFrame && r.toFrame >= s.endFrame)).map((s) => ({ seg: s.id, a: s.startFrame, b: s.endFrame }));
+}
+const arrLen = (ps) => ps.reduce((t, p) => t + p.b - p.a, 0);
+function arrSet(ps) { editChange(() => { E.arrange = ps.map((p) => ({ seg: p.seg, a: p.a, b: p.b })); }); renderArrange(); }
+function renderArrange() {
+  const box = $('arrCard'); if (!box || box.hidden) return;
+  const ps = arrPieces(), orig = arrSegs().reduce((t, s) => t + s.endFrame - s.startFrame, 0), len = arrLen(ps);
+  const moved = !!E.arrange?.length;
+  box.innerHTML = `
+    <div class="arr-head"><b>סידור שוטים</b><span class="arr-meta">${ps.length} שוטים · ${(len / FPS).toFixed(1)} שנ׳${moved ? ` · <span class="${len < orig ? 'neg' : ''}">${((len - orig) / FPS).toFixed(1)} שנ׳</span>` : ''}</span>
+      <span class="arr-sp"></span>
+      <button class="tbx" id="arrPlay">${arrPlaying ? '■ עצור' : '▶ נגן את הסידור'}</button>
+      <button class="tbx" id="arrReset" ${moved ? '' : 'disabled'}>אפס</button>
+      <button class="tbx" id="arrClose">סגור</button></div>
+    <div class="arr-hint">גוררים שוט כדי להזיז אותו · לוחצים על שוט כדי לקצר את ההתחלה או הסוף שלו</div>
+    <div class="arr-strip" id="arrStrip">${ps.map((p, i) => { const s = arrSeg(p.seg) || {}; const trimmed = p.a > s.startFrame || p.b < s.endFrame;
+      return `<div class="arr-piece${arrSel === p.seg ? ' sel' : ''}${arrPlaying?.i === i ? ' now' : ''}" data-i="${i}" style="flex-basis:${Math.max(64, Math.min(220, (p.b - p.a) / FPS * 42))}px"><b>${s.index ?? '?'}</b><span>${esc(String(s.shot || '').slice(0, 28))}</span><em>${((p.b - p.a) / FPS).toFixed(2)} שנ׳${trimmed ? ' ✂' : ''}</em></div>`; }).join('')}</div>
+    <div class="arr-trim" id="arrTrim"></div>`;
+  $('arrPlay').onclick = () => (arrPlaying ? arrStop() : arrStart(0));
+  $('arrReset').onclick = () => { editChange(() => { E.arrange = null; }); arrSel = null; renderArrange(); };
+  $('arrClose').onclick = () => { arrStop(); box.hidden = true; };
+  const strip = $('arrStrip');
+  strip.querySelectorAll('.arr-piece').forEach((el) => {
+    el.onpointerdown = (ev) => { arrDrag = { from: +el.dataset.i, x: ev.clientX, moved: false }; el.setPointerCapture(ev.pointerId); };
+    el.onpointermove = (ev) => {
+      if (!arrDrag) return;
+      if (Math.abs(ev.clientX - arrDrag.x) > 8) arrDrag.moved = true;
+      if (!arrDrag.moved) return;
+      strip.querySelectorAll('.arr-piece').forEach((o) => o.classList.remove('drop-l', 'drop-r'));
+      const t = arrTarget(strip, ev.clientX); if (t) t.el.classList.add(t.after ? 'drop-l' : 'drop-r');
+    };
+    el.onpointerup = (ev) => {
+      const d = arrDrag; arrDrag = null;
+      strip.querySelectorAll('.arr-piece').forEach((o) => o.classList.remove('drop-l', 'drop-r'));
+      if (!d) return;
+      if (!d.moved) { arrSel = arrSel === arrPieces()[d.from].seg ? null : arrPieces()[d.from].seg; renderArrange(); return; }
+      const t = arrTarget(strip, ev.clientX); if (!t) return;
+      const ps2 = arrPieces().slice(), [piece] = ps2.splice(d.from, 1);
+      let to = +t.el.dataset.i + (t.after ? 1 : 0); if (to > d.from) to--;
+      ps2.splice(to, 0, piece); arrSel = piece.seg; arrSet(ps2);
+    };
+  });
+  renderTrim();
+}
+function arrTarget(strip, x) {
+  for (const el of strip.querySelectorAll('.arr-piece')) {
+    const r = el.getBoundingClientRect();
+    if (x >= r.left && x <= r.right) return { el, after: x < r.left + r.width / 2 };   // RTL: the left half is "after"
+  }
+  return null;
+}
+function renderTrim() {
+  const box = $('arrTrim'), ps = arrPieces(), i = ps.findIndex((p) => p.seg === arrSel);
+  if (!box) return;
+  if (i < 0) { box.innerHTML = ''; return; }
+  const p = ps[i], s = arrSeg(p.seg);
+  box.innerHTML = `<div class="arr-trim-row"><b>שוט ${s.index} · ${esc(s.shot)}</b>
+    <label>התחלה <input type="range" id="trA" min="${s.startFrame}" max="${s.endFrame - 2}" value="${p.a}"></label>
+    <label>סוף <input type="range" id="trB" min="${s.startFrame + 2}" max="${s.endFrame}" value="${p.b}"></label>
+    <span class="mono" id="trLen">${((p.b - p.a) / FPS).toFixed(2)} שנ׳</span>
+    <button class="tbx" id="trLoop">▶ השוט</button><button class="tbx" id="trDel">הוצא מהסידור</button></div>`;
+  const live = () => { const a = +$('trA').value, b = +$('trB').value; $('trLen').textContent = `${(Math.max(1, b - a) / FPS).toFixed(2)} שנ׳`; };
+  const commit = (which) => { let a = +$('trA').value, b = +$('trB').value; if (b - a < 2) { if (which === 'a') a = b - 2; else b = a + 2; }
+    const ps2 = arrPieces().map((q) => q.seg === p.seg ? { ...q, a, b } : q); arrSet(ps2); playRange(a, b, true); };
+  $('trA').oninput = live; $('trB').oninput = live;
+  $('trA').onchange = () => commit('a'); $('trB').onchange = () => commit('b');
+  $('trLoop').onclick = () => playRange(p.a, p.b, true);
+  $('trDel').onclick = () => { arrSel = null; arrSet(arrPieces().filter((q) => q.seg !== p.seg)); };
+}
+function arrStart(i) {
+  const ps = arrPieces(); if (!ps[i]) return arrStop();
+  arrPlaying = { i, prev: editedPreview }; editedPreview = false; playUntil = null;
+  V.currentTime = (ps[i].a + 0.5) / FPS; V.play().catch(() => {}); renderArrange();
+}
+function arrStop() { if (!arrPlaying) return; editedPreview = arrPlaying.prev; arrPlaying = null; V.pause(); renderArrange(); }
+setInterval(() => {
+  if (!arrPlaying || V.paused) return;
+  const ps = arrPieces(), p = ps[arrPlaying.i]; if (!p) return arrStop();
+  const f = V.currentTime * FPS;
+  if (f >= p.b - 0.5 || f < p.a - 2) { if (arrPlaying.i + 1 >= ps.length) return arrStop(); arrPlaying.i++; V.currentTime = (ps[arrPlaying.i].a + 0.5) / FPS; renderArrange(); }
+}, 20);
+function openArrange() { const box = $('arrCard'); box.hidden = !box.hidden; if (!box.hidden) { renderArrange(); box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } else arrStop(); }
+
 // ---------- cloud room (Harel 20.10.2026): roles, who is here, live notes ----------
 const byLine = (e) => { const who = e.n?.author || e.r?.by || e.d?.by || e.x?.by; return who && who !== C.me.email ? '<span class="by">' + esc(who.split('@')[0]) + '</span>' : ''; };
 let following = null, people = [];
@@ -1664,7 +1756,7 @@ function cloudUI() {
   $('whoami').textContent = C.me.name + (owner ? '' : ' · צופה ומעיר');
   $('logout').onclick = C.signOut;
   $('peopleBtn').hidden = !owner; $('peopleBtn').onclick = openPeople;
-  if (!owner) { for (const id of ['sendTop', 'sendBottom']) $(id).hidden = true; $('delivery').textContent = 'ההערות, הקאטים וההוצאות שלך הם הצעות: הם נשמרים ונראים להראל מיד, והוא מחליט ושולח לקלוד.'; }
+  if (!owner) { $('tbArr')?.remove(); for (const id of ['sendTop', 'sendBottom']) $(id).hidden = true; $('delivery').textContent = 'ההערות, הקאטים וההוצאות שלך הם הצעות: הם נשמרים ונראים להראל מיד, והוא מחליט ושולח לקלוד.'; }
   const report = C.live({
     onNote: (n) => { upsertNote(n); renderNotes(); paintOverlay(); updateCounts(); },
     onLanes: (s) => { if (dirty) return; L = { ...s }; if (document.activeElement !== $('general')) $('general').value = L.general || ''; afterChange(); paintMarks?.(); },

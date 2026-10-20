@@ -55,7 +55,7 @@ function cloudUI() {
   $('whoami').textContent = C.me.name + (owner ? '' : ' · צופה ומעיר');
   $('logout').onclick = C.signOut;
   $('peopleBtn').hidden = !owner; $('peopleBtn').onclick = openPeople;
-  if (!owner) { for (const id of ['sendTop', 'sendBottom']) $(id).hidden = true; $('delivery').textContent = 'ההערות, הקאטים וההוצאות שלך הם הצעות: הם נשמרים ונראים להראל מיד, והוא מחליט ושולח לקלוד.'; }
+  if (!owner) { $('tbArr')?.remove(); for (const id of ['sendTop', 'sendBottom']) $(id).hidden = true; $('delivery').textContent = 'ההערות, הקאטים וההוצאות שלך הם הצעות: הם נשמרים ונראים להראל מיד, והוא מחליט ושולח לקלוד.'; }
   const report = C.live({
     onNote: (n) => { upsertNote(n); renderNotes(); paintOverlay(); updateCounts(); },
     onLanes: (s) => { if (dirty) return; L = { ...s }; if (document.activeElement !== $('general')) $('general').value = L.general || ''; afterChange(); paintMarks?.(); },
