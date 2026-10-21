@@ -60,9 +60,15 @@ if (!PRUNE_ONLY) {
 
   // version row, current
   const cloudModel = { ...model, fileMap, versions: undefined, version: undefined };
+  // the same label again = an edit-only fix published in place (Harel 21.10): same version row, notes kept, old film removed
+  const [prev] = await rest('GET', `versions?project_id=eq.${PROJECT}&label=eq.${encodeURIComponent(model.label)}&select=id,sha256`);
   await rest('PATCH', `versions?project_id=eq.${PROJECT}&is_current=eq.true`, { is_current: false });
   const [row] = await rest('POST', 'versions?on_conflict=project_id,label', { project_id: PROJECT, label: model.label, sha256: model.sha256, model: cloudModel, is_current: true }, 'resolution=merge-duplicates,return=representation');
-  console.log(`  ✓ "${row.label}" היא עכשיו הגרסה בחדר (id ${row.id})`);
+  if (prev && prev.sha256 !== model.sha256) {
+    const old = await list(`versions/${prev.sha256.slice(0, 12)}`);
+    if (old.length) await remove(old);
+    console.log(`  ✓ "${row.label}" עודכנה במקום (אותה גרסה, ההערות נשארו; ${old.length} קבצים ישנים נמחקו)`);
+  } else console.log(`  ✓ "${row.label}" היא עכשיו הגרסה בחדר (id ${row.id})`);
 
 }
 

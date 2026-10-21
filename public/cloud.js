@@ -104,10 +104,10 @@ function watchNewVersion() {
   if (watching) return; watching = true;
   setInterval(async () => {
     if (vparam() || document.getElementById('newVerBar')) return;
-    const { data } = await sb.from('versions').select('id,label').eq('is_current', true).limit(1);
-    const v = data?.[0]; if (!v || v.id === version?.id) return;
+    const { data } = await sb.from('versions').select('id,label,sha256').eq('is_current', true).limit(1);
+    const v = data?.[0]; if (!v || (v.id === version?.id && v.sha256 === version?.sha256)) return;
     const bar = document.createElement('button');
-    bar.id = 'newVerBar'; bar.textContent = `עלתה ${v.label} · לחצו לטעינה`;
+    bar.id = 'newVerBar'; bar.textContent = v.id === version?.id ? `${v.label} עודכנה · לחצו לטעינה` : `עלתה ${v.label} · לחצו לטעינה`;
     Object.assign(bar.style, { position: 'fixed', top: '12px', left: '50%', transform: 'translateX(-50%)', zIndex: 9999,
       padding: '10px 18px', borderRadius: '999px', border: '0', background: '#f5c542', color: '#111', font: '600 14px system-ui', cursor: 'pointer', boxShadow: '0 4px 18px rgba(0,0,0,.4)' });
     bar.onclick = () => location.replace(location.pathname);
